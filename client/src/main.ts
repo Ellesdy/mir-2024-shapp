@@ -1,267 +1,322 @@
-import './style.css'
 import * as PIXI from "pixi.js";
-import TweenJS, { Easing, Tween } from "@tweenjs/tween.js";
+import { Client, Room } from "colyseus.js";
+import { authenticate } from "./utils/Auth.js";
 
-import { discordSDK } from './utils/DiscordSDK.js';
-import { colyseusSDK } from './utils/Colyseus.js';
-import type { MyRoomState, Player } from "../../server/src/rooms/MyRoom.js";
-import { authenticate } from './utils/Auth.js';
-import { PlayerObject } from './objects/PlayerObject.js';
-// import { lerp } from './utils/MathUtils.js';
+// Create a PixiJS application
+const app = new PIXI.Application({
+  width: window.innerWidth,
+  height: window.innerHeight,
+  backgroundColor: 0x000000,
+});
+document.body.appendChild(app.view);
 
-const RESOLUTION = 4;
+// Global variables
+let room: Room;
+let playerRole: string;
+let players: any = {};
+let sessionId: string;
 
+// Game initialization
 (async () => {
-  /**
-   * Create a PixiJS application.
-   */
-  const app = new PIXI.Application();
+  // Authenticate with Discord
+  await authenticate();
 
-  // Intialize the application.
-  await app.init({
-    width: window.innerWidth,
-    height: window.innerHeight,
-    background: '#763b36',
-    resolution: RESOLUTION,
-    roundPixels: true, // Pixel art
+  // Connect to Colyseus server
+  const colyseusClient = new Client("ws://localhost:2567");
+  room = await colyseusClient.joinOrCreate("secret_hitler_room", {
+    username: "YourUsername",
   });
 
-  // Pixel art
-  app.canvas.style.imageRendering = "pixelated";
-  PIXI.TextureSource.defaultOptions.scaleMode = PIXI.DEPRECATED_SCALE_MODES.NEAREST;
+  sessionId = room.sessionId;
 
-  await PIXI.Assets.load([
-    /**
-     * Heros
-     */
-    { alias: "hero1", src: 'kenney_tiny-dungeon/Tiles/tile_0084.png' },
-    { alias: "hero2", src: 'kenney_tiny-dungeon/Tiles/tile_0088.png' },
-    { alias: "hero3", src: 'kenney_tiny-dungeon/Tiles/tile_0087.png' },
-    { alias: "hero4", src: 'kenney_tiny-dungeon/Tiles/tile_0086.png' },
-    { alias: "hero5", src: 'kenney_tiny-dungeon/Tiles/tile_0085.png' },
-    { alias: "hero6", src: 'kenney_tiny-dungeon/Tiles/tile_0096.png' },
-    { alias: "hero7", src: 'kenney_tiny-dungeon/Tiles/tile_0097.png' },
-    { alias: "hero8", src: 'kenney_tiny-dungeon/Tiles/tile_0098.png' },
-    { alias: "hero9", src: 'kenney_tiny-dungeon/Tiles/tile_0099.png' },
-    { alias: "hero10", src: 'kenney_tiny-dungeon/Tiles/tile_0100.png' },
-    { alias: "hero11", src: 'kenney_tiny-dungeon/Tiles/tile_0111.png' },
-    { alias: "hero12", src: 'kenney_tiny-dungeon/Tiles/tile_0112.png' },
+  // Handle initial game state
+  room.onStateChange.once((state) => {
+    // Initialize game based on state
+    players = state.players;
+    updatePlayerList();
+  });
 
-    /**
-     * Potions
-     */
-    { alias: "potion1", src: 'kenney_tiny-dungeon/Tiles/tile_0128.png' },
-    { alias: "potion2", src: 'kenney_tiny-dungeon/Tiles/tile_0127.png' },
-    { alias: "potion3", src: 'kenney_tiny-dungeon/Tiles/tile_0126.png' },
-    { alias: "potion4", src: 'kenney_tiny-dungeon/Tiles/tile_0125.png' },
-    { alias: "potion5", src: 'kenney_tiny-dungeon/Tiles/tile_0113.png' },
-    { alias: "potion6", src: 'kenney_tiny-dungeon/Tiles/tile_0114.png' },
-    { alias: "potion7", src: 'kenney_tiny-dungeon/Tiles/tile_0115.png' },
-    { alias: "potion7", src: 'kenney_tiny-dungeon/Tiles/tile_0116.png' },
+  // Listen to state changes
+  room.onStateChange((state) => {
+    // Update player list when state changes
+    players = state.players;
+    updatePlayerList();
+  });
 
-    /**
-     * Weapons
-     */
-    { alias: "shield1", src: 'kenney_tiny-dungeon/Tiles/tile_0101.png' },
-    { alias: "shield2", src: 'kenney_tiny-dungeon/Tiles/tile_0102.png' },
-    { alias: "sword1", src: 'kenney_tiny-dungeon/Tiles/tile_0103.png' },
-    { alias: "sword2", src: 'kenney_tiny-dungeon/Tiles/tile_0104.png' },
-    { alias: "sword3", src: 'kenney_tiny-dungeon/Tiles/tile_0105.png' },
-    { alias: "sword4", src: 'kenney_tiny-dungeon/Tiles/tile_0106.png' },
-    { alias: "sword5", src: 'kenney_tiny-dungeon/Tiles/tile_0107.png' },
-    { alias: "axe1", src: 'kenney_tiny-dungeon/Tiles/tile_0117.png' },
-    { alias: "axe2", src: 'kenney_tiny-dungeon/Tiles/tile_0118.png' },
-    { alias: "axe3", src: 'kenney_tiny-dungeon/Tiles/tile_0119.png' },
-    { alias: "staff1", src: 'kenney_tiny-dungeon/Tiles/tile_0129.png' },
-    { alias: "staff2", src: 'kenney_tiny-dungeon/Tiles/tile_0130.png' },
-    { alias: "staff3", src: 'kenney_tiny-dungeon/Tiles/tile_0131.png' },
+  // Message Handlers
+  room.onMessage("roleAssigned", (data) => {
+    playerRole = data.role;
+    displayRole(playerRole);
+  });
 
-    /**
-     * Monsters
-     */
-    { alias: "monster1", src: 'kenney_tiny-dungeon/Tiles/tile_0108.png' },
-    { alias: "monster2", src: 'kenney_tiny-dungeon/Tiles/tile_0109.png' },
-    { alias: "monster3", src: 'kenney_tiny-dungeon/Tiles/tile_0110.png' },
-    { alias: "monster4", src: 'kenney_tiny-dungeon/Tiles/tile_0111.png' },
-    { alias: "monster5", src: 'kenney_tiny-dungeon/Tiles/tile_0122.png' },
-    { alias: "monster6", src: 'kenney_tiny-dungeon/Tiles/tile_0121.png' },
-    { alias: "monster7", src: 'kenney_tiny-dungeon/Tiles/tile_0120.png' },
-    { alias: "monster8", src: 'kenney_tiny-dungeon/Tiles/tile_0123.png' },
-    { alias: "monster9", src: 'kenney_tiny-dungeon/Tiles/tile_0124.png' },
-  ]);
+  room.onMessage("startNomination", () => {
+    if (isPresident()) {
+      showNominationInterface();
+    } else {
+      showWaitingMessage(
+        "Waiting for the President to nominate a Chancellor..."
+      );
+    }
+  });
 
-  // Then adding the application's canvas to the DOM body.
-  document.body.appendChild(app.canvas);
+  room.onMessage("startVoting", (data) => {
+    showVotingInterface(data.chancellorId);
+  });
 
-  /**
-   * Main game variables
-   */
-  let localPlayer: PIXI.Container; // we will use this to store the local player
-  let playerSprites = new Map<Player, PIXI.Container>();
+  room.onMessage("votingResults", (data) => {
+    displayVotingResults(data.votes);
+  });
 
-  try {
-    /**
-     * Authenticate with Discord and get Colyseus JWT token
-     */
-    const authData = await authenticate();
+  room.onMessage("startLegislativeSession", (data) => {
+    if (isPresident()) {
+      choosePolicyToDiscard(data.policies);
+    } else if (isChancellor()) {
+      showWaitingMessage("Waiting for the President to discard a policy...");
+    }
+  });
 
-    // Assign the token to authenticate with Colyseus (Room's onAuth)
-    colyseusSDK.auth.token = authData.token;
+  room.onMessage("presidentDiscarded", (data) => {
+    if (isChancellor()) {
+      choosePolicyToEnact(data.policies);
+    }
+  });
 
-  } catch (e) {
-    console.error("Failed to authenticate", e);
+  room.onMessage("policyEnacted", (data) => {
+    displayPolicyEnacted(data.policy);
+  });
 
-    const error = new PIXI.Text({
-      anchor: 0.5,
-      text: "Failed to authenticate.",
-      style: {
-        fontSize: 18,
-        fill: 0xff0000,
-        stroke: 0x000000,
-      }
-    });
-    error.position.x = app.screen.width / (RESOLUTION * 2);
-    error.position.y = app.screen.height / (RESOLUTION * 2);
+  // Send readiness to server
+  room.send("ready");
+})();
 
-    app.stage.addChild(error);
-    return;
+// UI Functions
+
+function updatePlayerList() {
+  // Clear existing player list UI
+  // ...
+  // Create and display updated player list
+  // For each player in 'players', display their username and status
+}
+
+function displayRole(role: string) {
+  // Display the player's secret role
+  const roleModal = new PIXI.Container();
+  const roleText = new PIXI.Text(`Your role is: ${role}`, {
+    fill: "#ffffff",
+    fontSize: 24,
+  });
+
+  roleModal.addChild(roleText);
+  app.stage.addChild(roleModal);
+
+  // Remove after some time or on user action
+  setTimeout(() => {
+    app.stage.removeChild(roleModal);
+  }, 5000);
+}
+
+function showNominationInterface() {
+  // Display UI for the President to nominate a Chancellor
+  const nominationContainer = new PIXI.Container();
+
+  const instructionText = new PIXI.Text(
+    "Select a player to nominate for Chancellor:",
+    {
+      fill: "#ffffff",
+      fontSize: 18,
+    }
+  );
+  nominationContainer.addChild(instructionText);
+
+  let posY = 50;
+  for (const playerId in players) {
+    if (playerId !== sessionId && !players[playerId].isDead) {
+      const playerButton = new PIXI.Text(players[playerId].username, {
+        fill: "#00ff00",
+        fontSize: 16,
+      });
+      playerButton.y = posY;
+      playerButton.interactive = true;
+      (playerButton as PIXI.Text & { buttonMode: boolean }).buttonMode = true;
+
+      playerButton.on("pointerdown", () => {
+        nominateChancellor(playerId);
+        app.stage.removeChild(nominationContainer);
+      });
+
+      nominationContainer.addChild(playerButton);
+      posY += 30;
+    }
   }
 
-  /**
-   * Join the game room
-   */
-  const room = await colyseusSDK.joinOrCreate<MyRoomState>("my_room", {
-    channelId: discordSDK.channelId // join by channel ID
+  app.stage.addChild(nominationContainer);
+}
+
+function nominateChancellor(chancellorId: string) {
+  room.send("nominateChancellor", { chancellorId });
+}
+
+function showVotingInterface(chancellorId: string) {
+  // Display voting options (Ja! or Nein!)
+  const votingContainer = new PIXI.Container();
+
+  const instructionText = new PIXI.Text(
+    `Do you approve ${players[chancellorId].username} as Chancellor?`,
+    { fill: "#ffffff", fontSize: 18 }
+  );
+  votingContainer.addChild(instructionText);
+
+  const jaButton = new PIXI.Text("Ja!", { fill: "#00ff00", fontSize: 24 });
+  jaButton.y = 50;
+  jaButton.interactive = true;
+  (jaButton as PIXI.Text & { buttonMode: boolean }).buttonMode = true;
+  jaButton.on("pointerdown", () => {
+    castVote(true);
+    app.stage.removeChild(votingContainer);
+  });
+  votingContainer.addChild(jaButton);
+
+  const neinButton = new PIXI.Text("Nein!", { fill: "#ff0000", fontSize: 24 });
+  neinButton.y = 100;
+  neinButton.interactive = true;
+  (neinButton as PIXI.Text & { buttonMode: boolean }).buttonMode = true;
+  neinButton.on("pointerdown", () => {
+    castVote(false);
+    app.stage.removeChild(votingContainer);
+  });
+  votingContainer.addChild(neinButton);
+
+  app.stage.addChild(votingContainer);
+}
+
+function castVote(vote: boolean) {
+  room.send("castVote", { vote });
+}
+
+function displayVotingResults(votes: any) {
+  // Show the results of the vote
+  const resultContainer = new PIXI.Container();
+  let resultText = "Vote Results:\n";
+
+  for (const playerId in votes) {
+    const voteString = votes[playerId] ? "Ja!" : "Nein!";
+    resultText += `${players[playerId].username}: ${voteString}\n`;
+  }
+
+  const resultDisplay = new PIXI.Text(resultText, {
+    fill: "#ffffff",
+    fontSize: 18,
+  });
+  resultContainer.addChild(resultDisplay);
+  app.stage.addChild(resultContainer);
+
+  // Remove after some time
+  setTimeout(() => {
+    app.stage.removeChild(resultContainer);
+  }, 5000);
+}
+
+function choosePolicyToDiscard(policies: string[]) {
+  // President chooses one policy to discard
+  const policyContainer = new PIXI.Container();
+
+  const instructionText = new PIXI.Text("Select one policy to discard:", {
+    fill: "#ffffff",
+    fontSize: 18,
+  });
+  policyContainer.addChild(instructionText);
+
+  let posX = 50;
+  policies.forEach((policy, index) => {
+    const policyCard = new PIXI.Text(policy.toUpperCase(), {
+      fill: policy === "liberal" ? "#0000ff" : "#ff0000",
+      fontSize: 24,
+    });
+    policyCard.x = posX;
+    policyCard.y = 50;
+    policyCard.interactive = true;
+    (policyCard as PIXI.Text & { buttonMode: boolean }).buttonMode = true;
+
+    policyCard.on("pointerdown", () => {
+      room.send("discardPolicy", { policyIndex: index });
+      app.stage.removeChild(policyContainer);
+    });
+
+    policyContainer.addChild(policyCard);
+    posX += 150;
   });
 
-  /**
-   * On player join
-   */
-  room.state.players.onAdd((player, sessionId) => {
-    const sprite = new PlayerObject(player);
-    playerSprites.set(player, sprite);
+  app.stage.addChild(policyContainer);
+}
 
-    if (sessionId === room.sessionId) {
-      // Set local/current player
-      localPlayer = sprite;
+function choosePolicyToEnact(policies: string[]) {
+  // Chancellor chooses one policy to enact
+  const policyContainer = new PIXI.Container();
 
-      // Set its initial position
-      // (Do not listen for changes, as we are the ones changing the local player!)
-      sprite.position.x = player.position.x;
-      sprite.position.y = player.position.y;
+  const instructionText = new PIXI.Text("Select one policy to enact:", {
+    fill: "#ffffff",
+    fontSize: 18,
+  });
+  policyContainer.addChild(instructionText);
 
-    } else {
-      // Listen for changes of other players
-      player.position.onChange(() => {
-        sprite.position.x = player.position.x;
-        sprite.position.y = player.position.y;
-      });
-    }
+  let posX = 50;
+  policies.forEach((policy, index) => {
+    const policyCard = new PIXI.Text(policy.toUpperCase(), {
+      fill: policy === "liberal" ? "#0000ff" : "#ff0000",
+      fontSize: 24,
+    });
+    policyCard.x = posX;
+    policyCard.y = 50;
+    policyCard.interactive = true;
+    (policyCard as PIXI.Text & { buttonMode: boolean }).buttonMode = true;
 
-    // Fade in effect
-    sprite.scale.x = 0;
-    sprite.scale.y = 0;
-    sprite.alpha = 0;
-    new Tween(sprite.scale)
-      .to({ x: 1, y: 1 }, 250)
-      .easing(Easing.Quadratic.Out)
-      .start();
-    new Tween(sprite)
-      .to({ alpha: 1 }, 300)
-      .start();
-    // End fade effect
+    policyCard.on("pointerdown", () => {
+      room.send("enactPolicy", { policyIndex: index });
+      app.stage.removeChild(policyContainer);
+    });
 
-    app.stage.addChild(sprite);
+    policyContainer.addChild(policyCard);
+    posX += 150;
   });
 
-  /**
-   * On player leave
-   */
-  room.state.players.onRemove((player, sessionId) => {
-    const sprite = playerSprites.get(player)!;
+  app.stage.addChild(policyContainer);
+}
 
-    // Fade out & Remove sprite
-    new Tween(sprite.scale)
-      .to({ x: 0.1, y: 0.1 }, 100)
-      .easing(Easing.Quadratic.Out)
-      .onComplete(() => {
-        app.stage.removeChild(sprite);
-      })
-      .start();
-  });
+function displayPolicyEnacted(policy: string) {
+  // Display the enacted policy
+  const policyContainer = new PIXI.Container();
 
-  /**
-   * Player input handling
-   */
-  const keys = {
-    up: false,
-    down: false,
-    left: false,
-    right: false,
-  };
+  const policyText = new PIXI.Text(
+    `A ${policy.toUpperCase()} policy has been enacted!`,
+    { fill: policy === "liberal" ? "#0000ff" : "#ff0000", fontSize: 24 }
+  );
 
-  /**
-   * Keyboard events
-   */
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowUp" || event.key === "w") {
-      keys.up = true;
-    } else if (event.key === "ArrowDown" || event.key === "s") {
-      keys.down = true;
-    } else if (event.key === "ArrowLeft" || event.key === "a") {
-      keys.left = true;
-    } else if (event.key === "ArrowRight" || event.key === "d") {
-      keys.right = true;
-    }
-  });
+  policyContainer.addChild(policyText);
+  app.stage.addChild(policyContainer);
 
-  window.addEventListener("keyup", (event) => {
-    if (event.key === "ArrowUp" || event.key === "w") {
-      keys.up = false;
-    } else if (event.key === "ArrowDown" || event.key === "s") {
-      keys.down = false;
-    } else if (event.key === "ArrowLeft" || event.key === "a") {
-      keys.left = false;
-    } else if (event.key === "ArrowRight" || event.key === "d") {
-      keys.right = false;
-    }
-  });
+  // Update policy track UI
+  // ...
 
-  /**
-   * Main Game Loop
-   */
-  app.ticker.add((time) => {
-    TweenJS.update(app.ticker.lastTime);
+  // Remove after some time
+  setTimeout(() => {
+    app.stage.removeChild(policyContainer);
+  }, 5000);
+}
 
-    if (localPlayer) {
-      if (keys.up) {
-        localPlayer.position.y -= 1;
-      } else if (keys.down) {
-        localPlayer.position.y += 1;
-      }
+function showWaitingMessage(message: string) {
+  // Display a message to the player indicating they should wait
+  const waitingContainer = new PIXI.Container();
+  const waitingText = new PIXI.Text(message, { fill: "#ffffff", fontSize: 18 });
+  waitingContainer.addChild(waitingText);
+  app.stage.addChild(waitingContainer);
 
-      if (keys.left) {
-        localPlayer.position.x -= 1;
-      } else if (keys.right) {
-        localPlayer.position.x += 1;
-      }
+  // Store reference if you need to remove later
+}
 
-      // /**
-      //  * Interpolate other players
-      //  */
-      // playerSprites.forEach((sprite, player) => {
-      //   if (sprite === localPlayer) { return; }
-      //   sprite.position.x = lerp(sprite.position.x, player.position.x, 0.2);
-      //   sprite.position.y = lerp(sprite.position.y, player.position.y, 0.2);
-      // });
+function isPresident(): boolean {
+  return room.state.presidentId === sessionId;
+}
 
-      // Client-authoritative positioning
-      room.send("move", {
-        x: localPlayer.position.x,
-        y: localPlayer.position.y
-      })
-    }
-
-  });
-
-})();
+function isChancellor(): boolean {
+  return room.state.chancellorId === sessionId;
+}

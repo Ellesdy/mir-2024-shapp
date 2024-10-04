@@ -6,14 +6,14 @@ import { auth, JWT } from "@colyseus/auth";
 /**
  * Import your Room files
  */
-import { MyRoom } from "./rooms/MyRoom";
+import { SecretHitlerRoom } from "./rooms/SecretHitlerRoom";
 
 export default config({
     initializeGameServer: (gameServer) => {
         /**
          * Define your room handlers:
          */
-        gameServer.define('my_room', MyRoom)
+        gameServer.define('secret_hitler_room', SecretHitlerRoom)
             .filterBy(['channelId']);
     },
 
@@ -52,10 +52,11 @@ export default config({
                 'Content-Type': 'application/x-www-form-urlencoded',
               },
               body: new URLSearchParams({
-                client_id: process.env.DISCORD_CLIENT_ID,
-                client_secret: process.env.DISCORD_CLIENT_SECRET,
+                client_id: process.env.DISCORD_CLIENT_ID!,
+                client_secret: process.env.DISCORD_CLIENT_SECRET!,
                 grant_type: 'authorization_code',
                 code: req.body.code,
+                redirect_uri: process.env.DISCORD_REDIRECT_URI!,
               }),
             });
 
